@@ -1,0 +1,57 @@
+name: LAMP stack build and push
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  lamp:
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_IMAGE: ${{ secrets.DOCKER_HUB_USERNAME }}/wordpress-ci:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup docker compose file
+        run: |
+          cat > docker-compose.yml <<'EOF'
+          version: '3.8'
+          services:
+            db:
+              image: mariadb:10.6
+              environment:
+                MYSQL_ROOT_PASSWORD: rootpwd
+                MYSQL_DATABASE: wordpress
+                MYSQL_USER: wpuser
+                MYSQL_PASSWORD: wppwd
+              ports: [ "3306:3306" ]
+
+            wordpress:
+              image: wordpress:latest
+              ports: [ "8080:80" ]
+              environment:
+                WORDPRESS_DB_HOST: db:3306
+                WORDPRESS_DB_USER: wpuser
+                WORDPRESS_DB_PASSWORD: wppwd
+                WORDPRESS_DB_NAME: wordpress
+
+            adminer:
+              image: adminer
+              ports: [ "8081:8080" ]
+          EOF
+
+      - name: Start stack
+        run: docker compose up -d
+
+      - name: Test WordPress
+        run: curl -f http://localhost:8080 || exit 1
+
+      - name: Tag and push to Docker Hub
+        run: |
+          docker pull wordpress:latest
+          docker tag wordpress:latest $DOCKER_IMAGE
+      - uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+      - run: docker push $DOCKER_IMAGE
